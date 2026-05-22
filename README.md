@@ -1,4 +1,145 @@
 #  LAN File Transfer Application & Network Traffic Analysis via Wireshark
+[English Version](#english-version) | [Tiếng Việt](#tieng-viet)
+
+---
+
+## English Version
+# Final Project — **Data Communications**  
+Faculty of Electronics and Telecommunications, University of Science (VNU-HCM)
+
+This project successfully implemented a **Client-Server** system on the **MATLAB** platform for transferring multi-format files within a Local Area Network (LAN) using the **TCP/IP** protocol. In addition, **Wireshark** was utilized to monitor, capture, and perform in-depth analysis of packet structures at both the Transport Layer and Network Layer.
+
+---
+
+## Team Members (Group 8 - Class 23DTV_CLC1)
+* **Tran Thanh Thinh** (Team Leader) — *Main responsibilities:* System architecture design, Socket programming in MATLAB, Wireshark packet configuration and analysis, technical report compilation.
+* **Nguyen Phuoc Dang Minh** — *Main responsibilities:* Content editing (PowerPoint + Word) and Wireshark testing execution.
+* **Nguyen Van Dat** — *Main responsibilities:* Presentation, Wireshark testing support, and PowerPoint report interface design.
+
+---
+
+## 1. System Design & Architecture
+
+The application operates based on a sequential **Client-Server** model to ensure centralized management and easy scalability:
+
+* **Client (Sender):** Responsible for initiating a TCP connection to the Server Socket. It reads the original file, performs data fragmentation, and transmits the binary byte stream through the network.
+* **Server (Receiver):** Continuously listens for incoming connections on a specified port. It receives the byte stream, parses the data according to the custom-defined protocol, reconstructs the file structure information, and restores the complete file onto disk storage.
+
+### Custom Application Layer Protocol
+To solve the problem of identifying data boundaries in the continuous TCP stream (avoiding packet sticking and packet fragmentation issues), the team designed a custom message structure consisting of three main components:
+
+* **Header (1 byte):** Stores an integer value representing the length of the filename.
+* **Filename (n bytes):** The filename string placed immediately after the Header.
+* **Payload:** The complete raw binary data of the file being transmitted.
+
+---
+
+## 2. Core Source Code Implementation
+
+### Client Side (Data Transmission)
+```matlab
+% 1. Initialize TCP connection to the Server and perform 3-way handshake
+IP_SERVER = '172.16.0.56'; 
+PORT = 5001;
+t = tcpclient(IP_SERVER, PORT); 
+
+% 2. Send Header containing file structure information (Custom protocol)
+write(t, uint8(length(filename))); % Byte 1: Send filename length
+write(t, uint8(filename));         % Following bytes: Send filename string
+
+% 3. Data chunking algorithm to transmit Payload and avoid buffer congestion
+chunkSize = 5242880; % Limit each chunk size to 5MB
+for i = 1:chunkSize:totalBytes
+    endIdx = min(i + chunkSize - 1, totalBytes);
+    write(t, FileData(i:endIdx)); % Inject binary byte stream into transmission channel
+end
+```
+
+### Server Side (Data Reception)
+```matlab
+% 1. Initialize Server listening on specified Port
+server = tcpserver("0.0.0.0", 5001);
+
+% 2. Parse the Header of the custom-defined protocol
+while server.NumBytesAvailable < 1, pause(0.1); end
+name_length = read(server, 1, "uint8"); % Read first byte to get filename length
+
+while server.NumBytesAvailable < name_length, pause(0.1); end
+received_filename = char(read(server, name_length, "uint8")); % Read filename string
+
+% 3. Receive Payload data stream and sequentially write to disk
+fid = fopen(['copy_of_', received_filename], 'w');
+while true
+    if server.NumBytesAvailable > 0
+        data = read(server, server.NumBytesAvailable, "uint8"); % Read network buffer
+        fwrite(fid, data, 'uint8'); % Directly write binary byte stream to file
+    end
+    
+    % Exit condition: Client disconnected AND network buffer completely flushed
+    if ~server.Connected && server.NumBytesAvailable == 0
+        break;
+    end
+end
+fclose(fid);
+```
+
+---
+
+## 3. Packet Monitoring & Analysis with Wireshark
+
+The system uses Wireshark to visualize the actual operation of the TCP protocol, directly correlating networking theory with practical experimentation.
+
+### Connection Establishment Process (TCP 3-Way Handshake)
+
+Wireshark successfully captured the complete 3-step handshake procedure:
+
+* **The Client sends a SYN packet to request connection establishment.**
+
+* **The Server responds with a SYN-ACK packet to accept the connection.**
+
+* **The Client sends the final ACK packet to confirm successful connection establishment.**
+
+<img width="2106" height="875" alt="z7853135842318_ae7bd71530d76d00b558b2e6fce3d116" src="https://github.com/user-attachments/assets/b0e71643-6e0e-4274-b4a9-6896cf0451d9" />
+
+### Data Transmission & Error Control Mechanism
+
+* **Under ideal network conditions, Sequence Numbers increase sequentially and ACK packets respond accurately, ensuring data is received in the correct order without corruption.**
+
+* **During real-world testing under unstable physical network conditions, Wireshark recorded special packets such as TCP Dup ACK and TCP Retransmission. This clearly demonstrates TCP's powerful error control mechanism, which automatically detects packet loss and retransmits missing packets to ensure complete data integrity at the destination.**
+
+<img width="2105" height="877" alt="z7853137894084_57e557b966fdb4e3915c480899f3db0c" src="https://github.com/user-attachments/assets/3c6a98b5-22e2-4771-aa22-87ea815bd507" />
+
+---
+
+## 4. Experimental Results & Evaluation
+
+### Achievements
+
+| Evaluation Criteria | Actual Result | Technical Explanation |
+| :--- | :--- | :--- |
+| **Transmission Success Rate** | **100% achieved** within LAN | Stable Switch/Router-based connection with complete data integrity and no packet loss or corruption compared to the original file. |
+| **Multi-format File Support** | **Fully supported** | Thanks to the binary-byte handling mechanism at the Application Layer, the system smoothly processes text files (.txt, .doc), multimedia files (.jpg, .ppt), and source code files (.m, .py). |
+
+### Advantages & Limitations
+
+* **Advantages:** Extremely high reliability by fully leveraging TCP features such as packet loss recovery and in-order delivery. The source code structure is concise, intuitive, and easy to deploy within a LAN environment.
+
+* **Technical Limitations:** Limited by single-threaded processing capability. The Server only supports sequential one-to-one communication, which may lead to bottlenecks under multiple simultaneous requests. Data transmission is performed in plain text without encryption standards such as SSL/TLS, and no graphical user interface (GUI) is currently implemented.
+
+---
+
+## 5. Proposed Future Improvements
+
+* **Upgrade to Multi-threaded Architecture:** Improve the Server into a **Multi-threaded Server** or asynchronous processing model integrated with a Queue structure to handle multiple Clients simultaneously.
+
+* **Bandwidth Optimization:** Integrate high-performance compression algorithms such as **GZIP** or **LZ4** directly at the Application Layer before transmitting data through the TCP Socket.
+
+* **Enhanced Security:** Implement end-to-end encryption by encrypting the Payload using symmetric algorithms such as **AES** or encapsulating communication with **SSL/TLS** standards.
+
+* **Improve User Experience:** Develop a user-friendly GUI using MATLAB App Designer, while adding automatic reconnect (Retry) and **Resume** functionality for interrupted file transfers.
+---
+
+## Tieng Viet
 
 Đồ án kết thúc môn **Truyền thông dữ liệu** — Khoa Điện tử - Viễn thông, Trường Đại học Khoa học Tự nhiên (ĐHQG-HCM). 
 
